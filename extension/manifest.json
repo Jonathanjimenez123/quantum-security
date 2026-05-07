@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "AI Phishing Shield",
+  "version": "1.0.0",
+  "description": "Protección en tiempo real contra phishing impulsada por Gemini AI. Creada en 2026 Jonathan Jimenez Escobar.",
+  "author": "Jonathan Jimenez Escobar",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

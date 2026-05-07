@@ -1,0 +1,5 @@
+{
+  "name": "AI Shield",
+  "description": "Protección en tiempo real contra phishing avanzado utilizando IA para analizar contenido, estructura y dominios.",
+  "requestFramePermissions": []
+}

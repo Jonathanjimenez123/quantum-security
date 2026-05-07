@@ -1,0 +1,260 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required)
+    //   - name: string (optional)
+    //   - role: string (required, 'user', 'admin', 'expert')
+    //   - cultureScore: number (optional)
+    //   - createdAt: timestamp (optional)
+    //
+    // Collection: training_progress
+    // Document ID: {progressId}
+    // Fields:
+    //   - userId: string (required)
+    //   - moduleId: string (required)
+    //   - status: string (required, 'in-progress', 'completed')
+    //   - score: number (optional)
+    //   - completedAt: timestamp (optional)
+    //
+    // Collection: incidents
+    // Document ID: {incidentId}
+    // Fields:
+    //   - userId: string (required)
+    //   - type: string (required)
+    //   - description: string (optional)
+    //   - status: string (required, 'open', 'investigating', 'resolved')
+    //   - reportedAt: timestamp (required)
+    //
+    // Collection: settings
+    // Document ID: {settingId}
+    // Fields:
+    //   - userId: string (required)
+    //   - notificationsEnabled: boolean (optional)
+    //   - theme: string (optional, 'light', 'dark', 'system')
+    //
+    // Collection: scans
+    // Document ID: {scanId}
+    // Fields:
+    //   - userId: string (required)
+    //   - url: string (required)
+    //   - contentSnippet: string (optional)
+    //   - isPhishing: boolean (required)
+    //   - threatLevel: string (optional)
+    //   - confidence: number (optional)
+    //   - indicators: list of strings (optional)
+    //   - explanation: string (optional)
+    //   - recommendation: string (optional)
+    //   - timestamp: string (required)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+
+    function userIdUnchanged() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == request.auth.uid;
+    }
+
+    function userIdNotModified() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == resource.data.userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+        (request.auth.token.email == "escobarjimenez7@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+
+    // Domain Validators
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'name', 'role', 'cultureScore', 'createdAt']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
+             data.email is string && isValidEmail(data.email) &&
+             (!('name' in data) || (data.name is string && data.name.size() <= 100)) &&
+             data.role in ['user', 'admin', 'expert'] &&
+             (!('cultureScore' in data) || data.cultureScore is number) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidTrainingProgress(data) {
+      return hasOnlyAllowedFields(['userId', 'moduleId', 'status', 'score', 'completedAt']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+             data.moduleId is string && data.moduleId.size() > 0 && data.moduleId.size() < 100 &&
+             data.status in ['in-progress', 'completed'] &&
+             (!('score' in data) || data.score is number) &&
+             (!('completedAt' in data) || data.completedAt is timestamp);
+    }
+
+    function isValidIncident(data) {
+      return hasOnlyAllowedFields(['userId', 'title', 'type', 'severity', 'description', 'status', 'reportedAt', 'resolvedAt', 'source']) &&
+             (!('userId' in data) || (data.userId is string && data.userId.size() > 0 && data.userId.size() < 100)) &&
+             (!('title' in data) || (data.title is string && data.title.size() <= 200)) &&
+             data.type is string && data.type.size() > 0 && data.type.size() < 100 &&
+             (!('severity' in data) || (data.severity is string && data.severity.size() <= 50)) &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 2000)) &&
+             data.status in ['open', 'investigating', 'resolved', 'closed'] &&
+             data.reportedAt is timestamp &&
+             (!('resolvedAt' in data) || data.resolvedAt is timestamp) &&
+             (!('source' in data) || (data.source is string && data.source.size() <= 100));
+    }
+
+    function isValidSettings(data) {
+      return hasOnlyAllowedFields(['userId', 'sensitivityMode', 'globalSensitivity', 'nlpEnabled', 'nlpDepth', 'visualEnabled', 'visualTolerance', 'typoEnabled', 'typoDistance', 'updatedAt']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+             (!('sensitivityMode' in data) || data.sensitivityMode in ['standard', 'strict', 'expert']) &&
+             (!('globalSensitivity' in data) || data.globalSensitivity is number) &&
+             (!('nlpEnabled' in data) || data.nlpEnabled is bool) &&
+             (!('nlpDepth' in data) || data.nlpDepth is number) &&
+             (!('visualEnabled' in data) || data.visualEnabled is bool) &&
+             (!('visualTolerance' in data) || data.visualTolerance is number) &&
+             (!('typoEnabled' in data) || data.typoEnabled is bool) &&
+             (!('typoDistance' in data) || data.typoDistance is number) &&
+             (!('updatedAt' in data) || data.updatedAt is string);
+    }
+
+    function isValidScan(data) {
+      return hasOnlyAllowedFields(['userId', 'url', 'contentSnippet', 'isPhishing', 'threatLevel', 'confidence', 'indicators', 'explanation', 'recommendation', 'timestamp']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+             data.url is string && data.url.size() > 0 && data.url.size() < 2000 &&
+             (!('contentSnippet' in data) || (data.contentSnippet is string && data.contentSnippet.size() <= 1000)) &&
+             data.isPhishing is bool &&
+             (!('threatLevel' in data) || data.threatLevel is string) &&
+             (!('confidence' in data) || data.confidence is number) &&
+             (!('indicators' in data) || (data.indicators is list && data.indicators.size() <= 50)) &&
+             (!('explanation' in data) || (data.explanation is string && data.explanation.size() <= 5000)) &&
+             (!('recommendation' in data) || (data.recommendation is string && data.recommendation.size() <= 5000)) &&
+             data.timestamp is string;
+    }
+
+    function isValidSafelistItem(data) {
+      return hasOnlyAllowedFields(['name', 'url', 'risk', 'addedBy', 'timestamp']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.url is string && data.url.size() > 0 && data.url.size() < 2000 &&
+             data.risk is string && data.risk.size() > 0 && data.risk.size() < 50 &&
+             data.addedBy is string && data.addedBy.size() > 0 && data.addedBy.size() < 100 &&
+             data.timestamp is string;
+    }
+
+    function isValidApiKey(data) {
+      return hasOnlyAllowedFields(['userId', 'name', 'key', 'permissions', 'status', 'createdAt', 'lastUsed']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.key is string && data.key.size() > 0 && data.key.size() < 200 &&
+             (!('permissions' in data) || (data.permissions is string && data.permissions.size() <= 100)) &&
+             data.status in ['active', 'revoked'] &&
+             data.createdAt is string &&
+             (!('lastUsed' in data) || data.lastUsed is string);
+    }
+
+    function isValidWebhook(data) {
+      return hasOnlyAllowedFields(['userId', 'name', 'url', 'events', 'status', 'createdAt']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.url is string && data.url.size() > 0 && data.url.size() < 2000 &&
+             (!('events' in data) || (data.events is list && data.events.size() <= 20)) &&
+             data.status in ['active', 'inactive'] &&
+             data.createdAt is string;
+    }
+
+    // Rules
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && uidUnchanged() && (request.resource.data.role == 'user' || isAdmin());
+      allow update: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && uidNotModified() && (request.resource.data.role == resource.data.role || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /training_progress/{progressId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidTrainingProgress(request.resource.data) && userIdUnchanged();
+      allow update: if isAuthenticated() && isDocOwner() && isValidTrainingProgress(request.resource.data) && userIdNotModified();
+      allow delete: if isAdmin();
+    }
+
+    match /incidents/{incidentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidIncident(request.resource.data) && userIdUnchanged();
+      allow update: if isAuthenticated() && (isDocOwner() || isAdmin()) && isValidIncident(request.resource.data) && userIdNotModified();
+      allow delete: if isAdmin();
+    }
+
+    match /ai_metrics/{metricId} {
+      allow read: if isAuthenticated();
+    }
+
+    match /settings/{settingId} {
+      allow read: if isDocOwner() || isAdmin() || settingId == 'ai';
+      allow create: if isAuthenticated() && isValidSettings(request.resource.data) && userIdUnchanged();
+      allow update: if isAuthenticated() && isDocOwner() && isValidSettings(request.resource.data) && userIdNotModified();
+      allow delete: if isAdmin();
+    }
+
+    match /scans/{scanId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidScan(request.resource.data) && userIdUnchanged();
+      allow update: if isAuthenticated() && isDocOwner() && isValidScan(request.resource.data) && userIdNotModified();
+      allow delete: if isAdmin();
+    }
+
+    match /safelist/{itemId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin() && isValidSafelistItem(request.resource.data) && request.resource.data.addedBy == request.auth.uid;
+      allow update: if isAdmin() && isValidSafelistItem(request.resource.data) && areImmutableFieldsUnchanged(['url', 'addedBy', 'timestamp']);
+      allow delete: if isAdmin();
+    }
+
+    match /apiKeys/{keyId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidApiKey(request.resource.data) && userIdUnchanged();
+      allow update: if isAuthenticated() && isDocOwner() && isValidApiKey(request.resource.data) && userIdNotModified();
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /webhooks/{webhookId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidWebhook(request.resource.data) && userIdUnchanged();
+      allow update: if isAuthenticated() && isDocOwner() && isValidWebhook(request.resource.data) && userIdNotModified();
+      allow delete: if isDocOwner() || isAdmin();
+    }
+  }
+}
