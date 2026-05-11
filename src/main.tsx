@@ -1,14 +1,14 @@
-import {StrictMode} from 'react';
-import {createRoot} from 'react-dom/client';
+import React, { StrictMode } from 'react';
+import ReactDOM from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
-import * as d3 from 'd3';
-import 'd3-transition';
-import App from './App.tsx';
+
+import App from './App';
 import './index.css';
+
 import { PreferencesProvider } from './contexts/PreferencesContext';
 import { ToastProvider } from './contexts/ToastContext';
 
-createRoot(document.getElementById('root')!).render(
+ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
     <HashRouter>
       <PreferencesProvider>
@@ -17,5 +17,5 @@ createRoot(document.getElementById('root')!).render(
         </ToastProvider>
       </PreferencesProvider>
     </HashRouter>
-  </StrictMode>,
+  </StrictMode>
 );
